@@ -3,8 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Pro - Final</title>
+    <title>Scanner Pro - Final Zip</title>
+    <!-- Tải thư viện jsPDF và JSZip cục bộ -->
     <script src="jspdf.umd.min.js"></script>
+    <script src="jszip.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; padding: 15px; background: #f4f4f9; margin: 0; }
         h2 { margin-top: 10px; font-size: 22px; color: #1c1c1e; }
@@ -14,6 +16,7 @@
         .btn-scan { background-color: #007aff; }
         .btn-pdf-single { background-color: #34c759; }
         .btn-pdf-multi { background-color: #ff9500; }
+        .btn-delete-all { background-color: #ff3b30; }
         .btn:disabled { background-color: #ccc; cursor: not-allowed; }
         
         /* Bảng Hướng dẫn quét */
@@ -106,9 +109,10 @@
     
     <div id="exportSection" style="display: none; margin-top: 15px;">
         <input type="text" id="filenameInput" class="filename-input" placeholder="Nhập tên file (VD: Hop_Dong)">
-        <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
             <button class="btn btn-pdf-single" onclick="generateSinglePDF()">📄 Xuất 1 file PDF chung</button>
-            <button class="btn btn-pdf-multi" onclick="generateMultiplePDFs()">📑 Xuất các file PDF rời</button>
+            <button class="btn btn-pdf-multi" onclick="generateMultiplePDFs()">📑 Xuất Zip các file PDF rời</button>
+            <button class="btn btn-delete-all" onclick="clearAll()">🗑️ Xóa tất cả</button>
         </div>
     </div>
 
@@ -162,9 +166,8 @@
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
                         
-                        // Lấy cấu hình dung lượng ảnh
                         let qualitySetting = document.getElementById('qualitySelect').value;
-                        let MAX_WIDTH = 2500; // Medium default
+                        let MAX_WIDTH = 2500; 
                         let jpegQuality = 0.85; 
 
                         if (qualitySetting === 'low') {
@@ -187,10 +190,8 @@
                         canvas.height = height;
                         ctx.drawImage(img, 0, 0, width, height);
 
-                        // Gọi AI xử lý cắt và chỉnh màu
                         processImageCV(canvas);
                         
-                        // Lưu lại thành chuẩn JPEG theo mức nén
                         const compressedDataUrl = canvas.toDataURL('image/jpeg', jpegQuality);
                         images.push(compressedDataUrl);
                         
@@ -287,7 +288,6 @@
 
                     cv.cvtColor(shavedWarped, shavedWarped, cv.COLOR_RGBA2RGB, 0); 
                     
-                    // Lớp Mask ăn mòn bảo toàn chi tiết
                     let bg = new cv.Mat();
                     let bgScale = 0.1;
                     let bgW = Math.max(1, Math.floor(shaveWidth * bgScale));
@@ -300,12 +300,10 @@
                     cv.resize(bg, bg, new cv.Size(shaveWidth, shaveHeight), 0, 0, cv.INTER_LINEAR);
                     cv.divide(shavedWarped, bg, shavedWarped, 255.0);
 
-                    // Kéo sáng nền
                     let alpha = 1.0 + (whitenessVal * 0.04); 
                     let beta = -(whitenessVal * 8);      
                     cv.convertScaleAbs(shavedWarped, shavedWarped, alpha, beta);
 
-                    // Bơm màu chống bệt
                     let hsv = new cv.Mat();
                     cv.cvtColor(shavedWarped, hsv, cv.COLOR_RGB2HSV, 0);
                     let hsvPlanes = new cv.MatVector();
@@ -319,7 +317,6 @@
                     cv.merge(newHsvPlanes, hsv);
                     cv.cvtColor(hsv, shavedWarped, cv.COLOR_HSV2RGB, 0);
 
-                    // Viền động 75th Percentile
                     let edgeFillX = Math.max(1, Math.floor(shaveWidth * edgePercentVal));
                     let edgeFillY = Math.max(1, Math.floor(shaveHeight * edgePercentVal));
 
@@ -378,12 +375,19 @@
             }
         }
 
-        // TÍNH NĂNG XÓA ẢNH
+        // TÍNH NĂNG XÓA TỪNG ẢNH
         window.deleteImage = function(index) {
-            // Hỏi xác nhận để tránh bấm nhầm
             if (confirm(`Bạn có chắc chắn muốn xóa Trang ${index + 1}?`)) {
-                images.splice(index, 1); // Xóa khỏi mảng
-                renderPreview();         // Cập nhật lại giao diện
+                images.splice(index, 1);
+                renderPreview();
+            }
+        };
+
+        // TÍNH NĂNG XÓA TẤT CẢ
+        window.clearAll = function() {
+            if (confirm("Bạn có chắc chắn muốn xóa toàn bộ ảnh đã quét để bắt đầu lại?")) {
+                images.length = 0; 
+                renderPreview();   
             }
         };
 
@@ -399,7 +403,6 @@
                 `;
                 preview.appendChild(div);
             });
-            // Ẩn cụm tính năng xuất PDF nếu mảng trống (người dùng xóa hết ảnh)
             exportSection.style.display = images.length > 0 ? 'block' : 'none';
         }
 
@@ -409,6 +412,7 @@
             return customName.replace(/\.pdf$/i, ''); 
         }
 
+        // XUẤT 1 FILE PDF CHUNG
         async function generateSinglePDF() {
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('p', 'mm', 'a4');
@@ -438,34 +442,60 @@
             pdf.save(fileName);
         }
 
+        // XUẤT NHIỀU FILE PDF NÉN VÀO FILE ZIP
         async function generateMultiplePDFs() {
-            const { jsPDF } = window.jspdf;
+            if (typeof JSZip === 'undefined') {
+                alert("Không tìm thấy thư viện JSZip. Vui lòng tải file jszip.min.js về để sử dụng tính năng này.");
+                return;
+            }
+
+            const zip = new JSZip();
             let baseName = getBaseFilename();
 
-            for (let i = 0; i < images.length; i++) {
-                const pdf = new jsPDF('p', 'mm', 'a4');
-                const pageWidth = pdf.internal.pageSize.getWidth();
-                const pageHeight = pdf.internal.pageSize.getHeight();
+            // Hiển thị trạng thái đang nén Zip
+            loadingDiv.style.display = 'block';
+            loadingDiv.innerText = `⏳ Đang nén ${images.length} file PDF vào thư mục Zip...`;
 
-                const props = pdf.getImageProperties(images[i]);
-                const ratio = props.width / props.height;
-                let finalWidth = pageWidth;
-                let finalHeight = pageWidth / ratio;
+            // Bọc quá trình này trong setTimeout để trình duyệt kịp vẽ UI trạng thái loading
+            setTimeout(() => {
+                for (let i = 0; i < images.length; i++) {
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+                    const pageWidth = pdf.internal.pageSize.getWidth();
+                    const pageHeight = pdf.internal.pageSize.getHeight();
 
-                if (finalHeight > pageHeight) {
-                    finalHeight = pageHeight;
-                    finalWidth = pageHeight * ratio;
+                    const props = pdf.getImageProperties(images[i]);
+                    const ratio = props.width / props.height;
+                    let finalWidth = pageWidth;
+                    let finalHeight = pageWidth / ratio;
+
+                    if (finalHeight > pageHeight) {
+                        finalHeight = pageHeight;
+                        finalWidth = pageHeight * ratio;
+                    }
+
+                    const x = (pageWidth - finalWidth) / 2;
+                    const y = (pageHeight - finalHeight) / 2;
+
+                    pdf.addImage(images[i], 'JPEG', x, y, finalWidth, finalHeight, undefined, 'FAST');
+                    
+                    // Xuất PDF thành dạng mảng nhị phân (Blob) để nhét vào Zip
+                    const pdfBlob = pdf.output('blob');
+                    
+                    // Đặt tên theo chuẩn: [Tên file]_[Số thứ tự].pdf
+                    zip.file(`${baseName}_${i + 1}.pdf`, pdfBlob);
                 }
 
-                const x = (pageWidth - finalWidth) / 2;
-                const y = (pageHeight - finalHeight) / 2;
-
-                pdf.addImage(images[i], 'JPEG', x, y, finalWidth, finalHeight, undefined, 'FAST');
-                
-                pdf.save(`${baseName}_Trang_${i + 1}.pdf`);
-                
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
+                // Gói tất cả vào file Zip và tải xuống
+                zip.generateAsync({type:"blob"}).then(function(content) {
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(content);
+                    link.download = `${baseName}_All.zip`;
+                    link.click();
+                    
+                    loadingDiv.style.display = 'none'; // Ẩn thông báo tải xong
+                });
+            }, 100); 
         }
     </script>
 </body>
