@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>PDF Toolbox</title>
+
+<!-- qpdf-WASM: xử lý PDF theo hướng giữ nguyên cấu trúc/tài nguyên PDF -->
+<script src="https://unpkg.com/@neslinesli93/qpdf-wasm@0.3.0/dist/qpdf.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f4f6;color:#111827;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+header{background:#111827;color:#fff;padding:22px 16px;text-align:center}
+header h1{margin:0;font-size:23px} header p{margin:7px 0 0;color:#d1d5db;font-size:13px}
+.container{max-width:720px;margin:auto;padding:14px}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px}
+.tab{border:0;border-radius:12px;padding:12px 4px;background:#e5e7eb;font-size:12px;font-weight:700;color:#374151}
+.tab.active{background:#111827;color:#fff}
+.panel{display:none}.panel.active{display:block}
+.card{background:#fff;border-radius:18px;padding:17px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+h2{font-size:18px;margin:0 0 7px}.desc{font-size:13px;color:#6b7280;margin:0 0 14px;line-height:1.5}
+input[type=file]{width:100%;padding:12px;border:1px dashed #9ca3af;border-radius:12px;background:#f9fafb}
+button,.download{width:100%;border:0;border-radius:12px;padding:13px 14px;background:#111827;color:#fff;font-size:15px;font-weight:700;margin-top:10px;cursor:pointer;text-align:center;text-decoration:none;display:block}
+button.secondary{background:#e5e7eb;color:#111827} button:disabled{opacity:.45}
+.options{display:grid;gap:10px;margin-top:12px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+select{width:100%;padding:11px;border:1px solid #d1d5db;border-radius:10px;background:#fff;font-size:14px}
+.small{font-size:11px;color:#6b7280}.filelist{font-size:13px;color:#374151;margin-top:8px;max-height:170px;overflow:auto}
+.fileitem{padding:5px 0;border-bottom:1px solid #f0f0f0}
+.status{display:none;margin-top:12px;padding:11px;border-radius:10px;background:#f3f4f6;font-size:13px;line-height:1.5}
+.status.show{display:block}.progress{height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-top:8px}
+.bar{height:100%;width:0;background:#111827;transition:width .15s}
+.note{font-size:12px;color:#6b7280;line-height:1.5}.preview{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.preview img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb}
+.badge{display:inline-block;padding:4px 8px;border-radius:99px;background:#ecfdf5;color:#047857;font-size:11px;font-weight:700;margin-top:5px}
+footer{text-align:center;color:#9ca3af;font-size:11px;padding:5px 15px 25px}
+</style>
+</head>
+
+<body>
+<header>
+  <h1>📄 PDF Toolbox</h1>
+  <p>Tách • Gộp • Ảnh → PDF • PDF → Ảnh</p>
+</header>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab active" data-tab="split">Tách PDF</button>
+    <button class="tab" data-tab="merge">Gộp PDF</button>
+    <button class="tab" data-tab="imgpdf">Ảnh → PDF</button>
+    <button class="tab" data-tab="pdfimg">PDF → Ảnh</button>
+  </div>
+
+  <section id="split" class="panel active card">
+    <h2>✂️ Tách PDF</h2>
+    <p class="desc">Tách từng trang mà không render lại PDF. Dùng qpdf-WASM để tránh phình dung lượng không cần thiết.</p>
+    <div class="badge">✓ Giữ nguyên nội dung PDF • Không chuyển qua ảnh</div>
+    <input id="splitFile" type="file" accept="application/pdf" style="margin-top:10px">
+    <div id="splitInfo" class="filelist"></div>
+    <button id="splitBtn" disabled>Tách PDF</button>
+    <div id="splitStatus" class="status"></div>
+  </section>
+
+  <section id="merge" class="panel card">
+    <h2>📚 Gộp PDF</h2>
+    <p class="desc">Gộp trực tiếp các trang PDF bằng qpdf, không render hoặc nén lại hình ảnh.</p>
+    <div class="badge">✓ Không tái mã hóa hình ảnh</div>
+    <input id="mergeFiles" type="file" accept="application/pdf" multiple style="margin-top:10px">
+    <div id="mergeInfo" class="filelist"></div>
+    <button id="mergeBtn" disabled>Gộp thành 1 PDF</button>
+    <div id="mergeStatus" class="status"></div>
+  </section>
+
+  <section id="imgpdf" class="panel card">
+    <h2>🖼️ Ảnh → PDF</h2>
+    <p class="desc">Mỗi ảnh thành một trang. Đây là chức năng duy nhất có lựa chọn mức dung lượng/chất lượng.</p>
+    <input id="imageFiles" type="file" accept="image/*" multiple>
+
+    <div class="options">
+      <div class="grid2">
+        <div>
+          <label class="small">Khổ giấy</label>
+          <select id="pageSize">
+            <option value="a4">A4</option>
+            <option value="letter">Letter</option>
+            <option value="auto">Theo ảnh</option>
+          </select>
+        </div>
+        <div>
+          <label class="small">Hướng</label>
+          <select id="orientation">
+            <option value="auto">Tự động</option>
+            <option value="portrait">Dọc</option>
+            <option value="landscape">Ngang</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label class="small">Dung lượng / chất lượng</label>
+        <select id="imgQuality">
+          <option value="low">Thấp — file nhỏ</option>
+          <option value="medium" selected>Trung bình — cân bằng</option>
+          <option value="high">Cao — ưu tiên chất lượng</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="imageInfo" class="filelist"></div>
+    <div id="imagePreview" class="preview"></div>
+    <button id="imgPdfBtn" disabled>Tạo PDF</button>
+    <div id="imgPdfStatus" class="status"></div>
+  </section>
+
+  <section id="pdfimg" class="panel card">
+    <h2>🖼️ PDF → Ảnh</h2>
+    <p class="desc">Chuyển từng trang thành ảnh JPG hoặc PNG. PDF gốc không bị thay đổi. Nhiều ảnh sẽ tự ZIP.</p>
+    <input id="pdfToImageFile" type="file" accept="application/pdf">
+
+    <div class="options">
+      <div class="grid2">
+        <div>
+          <label class="small">Định dạng</label>
+          <select id="imageFormat">
+            <option value="jpeg" selected>JPG — nhỏ hơn</option>
+            <option value="png">PNG — không mất dữ liệu ảnh</option>
+          </select>
+        </div>
+        <div>
+          <label class="small">Độ phân giải</label>
+          <select id="renderScale">
+            <option value="1.5">150% — nhỏ</option>
+            <option value="2" selected>200% — cân bằng</option>
+            <option value="2.5">250% — cao</option>
+            <option value="3">300% — rất cao</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="pdfImgInfo" class="filelist"></div>
+    <button id="pdfImgBtn" disabled>Chuyển PDF → Ảnh</button>
+    <div id="pdfImgStatus" class="status"></div>
+  </section>
+
+  <div class="card">
+    <div class="note">
+      🔒 <b>Nguyên tắc dung lượng:</b><br>
+      • Tách PDF: không biến trang thành ảnh và không dùng pdf-lib copyPages.<br>
+      • Gộp PDF: ghép trực tiếp các trang, không giải mã rồi nén lại hình ảnh.<br>
+      • Ảnh → PDF: có 3 mức dung lượng <b>Thấp / Trung bình / Cao</b>.<br>
+      • PDF → Ảnh: dung lượng phụ thuộc định dạng JPG/PNG và độ phân giải; đây là chuyển đổi định dạng nên không thể đảm bảo bằng dung lượng PDF gốc.<br><br>
+      ⚠️ Lần đầu mở trang cần Internet để tải thư viện. File của bạn được xử lý trong trình duyệt, không gửi lên server của công cụ.
+    </div>
+  </div>
+</div>
+
+<footer>Chạy trực tiếp trên iPhone/iPad • GitHub Pages</footer>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const QPDF_WASM =
+  "https://unpkg.com/@neslinesli93/qpdf-wasm@0.3.0/dist/qpdf.wasm";
+
+let qpdf = null;
+let qpdfLoading = null;
+
+const $ = id => document.getElementById(id);
+
+function showStatus(id, text, progress=null){
+  const el=$(id);
+  el.classList.add("show");
+  el.innerHTML = text + (progress===null ? "" :
+    `<div class="progress"><div class="bar" style="width:${Math.max(0,Math.min(100,progress))}%"></div></div>`);
+}
+
+function fmtBytes(bytes){
+  if(bytes < 1024) return bytes+" B";
+  if(bytes < 1024**2) return (bytes/1024).toFixed(1)+" KB";
+  if(bytes < 1024**3) return (bytes/1024**2).toFixed(2)+" MB";
+  return (bytes/1024**3).toFixed(2)+" GB";
+}
+
+function baseName(name){
+  return name.replace(/\.[^.]+$/,"");
+}
+
+function downloadBlob(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+async function makeZip(files, zipName){
+  const zip=new JSZip();
+  files.forEach(f=>zip.file(f.name,f.data));
+  const blob=await zip.generateAsync({
+    type:"blob",
+    compression:"DEFLATE",
+    compressionOptions:{level:6}
+  });
+  downloadBlob(blob,zipName);
+  return blob.size;
+}
+
+async function initQPDF(){
+  if(qpdf) return qpdf;
+  if(qpdfLoading) return qpdfLoading;
+
+  qpdfLoading=(async()=>{
+    if(typeof window.Module !== "function")
+      throw new Error("Không tải được qpdf-WASM. Hãy kiểm tra Internet rồi tải lại trang.");
+
+    qpdf=await window.Module({
+      locateFile:()=>QPDF_WASM,
+      noInitialRun:true
+    });
+    return qpdf;
+  })();
+
+  try{return await qpdfLoading}
+  finally{qpdfLoading=null}
+}
+
+function safePath(name){
+  return name.replace(/[^a-zA-Z0-9._-]/g,"_");
+}
+
+async function qpdfRun(args, outputPath, cleanupPaths=[]){
+  const engine=await initQPDF();
+
+  try{
+    engine.callMain(args);
+    const data=engine.FS.readFile(outputPath);
+    return new Uint8Array(data);
+  }finally{
+    for(const p of cleanupPaths){
+      try{engine.FS.unlink(p)}catch(e){}
+    }
+    try{engine.FS.unlink(outputPath)}catch(e){}
+  }
+}
+
+/* Tabs */
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click",()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+    tab.classList.add("active");
+    $(tab.dataset.tab).classList.add("active");
+  });
+});
+
+/* =============== TÁCH PDF =============== */
+let splitFile=null;
+
+$("splitFile").addEventListener("change",e=>{
+  splitFile=e.target.files[0]||null;
+  $("splitBtn").disabled=!splitFile;
+  $("splitInfo").innerHTML=splitFile ?
+    `📄 ${splitFile.name} — ${fmtBytes(splitFile.size)}`:"";
+});
+
+$("splitBtn").addEventListener("click",async()=>{
+  if(!splitFile)return;
+
+  try{
+    $("splitBtn").disabled=true;
+    showStatus("splitStatus","⏳ Đang tải bộ xử lý PDF...",0);
+
+    const buffer=await splitFile.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buffer.slice(0)}).promise;
+    const total=pdf.numPages;
+
+    const engine=await initQPDF();
+    const input="/pdf_input_split.pdf";
+    engine.FS.writeFile(input,new Uint8Array(buffer));
+
+    const outputs=[];
+    const prefix=safePath(baseName(splitFile.name));
+
+    for(let i=1;i<=total;i++){
+      const out=`/split_${i}.pdf`;
+
+      /*
+       * --pages thay vì pdf-lib copyPages:
+       * qpdf lấy trang trực tiếp từ PDF nguồn và bảo toàn stream/image/font.
+       * remove-unreferenced-resources=yes cố gắng loại bỏ resource không
+       * thực sự được dùng bởi trang, giảm việc nhân bản tài nguyên dùng chung.
+       */
+      engine.callMain([
+        "--remove-unreferenced-resources=yes",
+        "--empty",
+        "--pages",
+        input,
+        String(i),
+        "--",
+        out
+      ]);
+
+      const bytes=new Uint8Array(engine.FS.readFile(out));
+      outputs.push({
+        name:`${prefix}_trang_${String(i).padStart(String(total).length,"0")}.pdf`,
+        data:bytes
+      });
+
+      try{engine.FS.unlink(out)}catch(e){}
+      showStatus(
+        "splitStatus",
+        `⏳ Đang tách trang ${i}/${total}...`,
+        i/total*100
+      );
+      await new Promise(r=>setTimeout(r,0));
+    }
+
+    try{engine.FS.unlink(input)}catch(e){}
+
+    const totalOut=outputs.reduce((s,x)=>s+x.data.byteLength,0);
+
+    if(total===1){
+      downloadBlob(new Blob([outputs[0].data],{type:"application/pdf"}),outputs[0].name);
+      showStatus("splitStatus",
+        `✅ Đã tách 1 trang.<br>Dung lượng gốc: ${fmtBytes(splitFile.size)}<br>Đầu ra: ${fmtBytes(totalOut)}`,100);
+    }else{
+      const zipSize=await makeZip(outputs,`${prefix}_tach.zip`);
+      showStatus("splitStatus",
+        `✅ Đã tách ${total} trang và tạo ZIP.<br>`+
+        `PDF gốc: ${fmtBytes(splitFile.size)}<br>`+
+        `Tổng các PDF: ${fmtBytes(totalOut)}<br>`+
+        `ZIP: ${fmtBytes(zipSize)}`,100);
+    }
+  }catch(err){
+    console.error(err);
+    showStatus("splitStatus","❌ Không thể tách PDF: "+(err.message||err),0);
+  }finally{
+    $("splitBtn").disabled=false;
+  }
+});
+
+/* =============== GỘP PDF =============== */
+let mergeFiles=[];
+
+$("mergeFiles").addEventListener("change",e=>{
+  mergeFiles=[...e.target.files];
+  $("mergeBtn").disabled=!mergeFiles.length;
+  $("mergeInfo").innerHTML=mergeFiles.length ?
+    mergeFiles.map((f,i)=>`<div class="fileitem">${i+1}. ${f.name} (${fmtBytes(f.size)})</div>`).join(""):"";
+});
+
+$("mergeBtn").addEventListener("click",async()=>{
+  if(!mergeFiles.length)return;
+
+  try{
+    $("mergeBtn").disabled=true;
+    showStatus("mergeStatus","⏳ Đang tải bộ xử lý PDF...",0);
+
+    const engine=await initQPDF();
+    const paths=[];
+
+    for(let i=0;i<mergeFiles.length;i++){
+      const path=`/merge_${i}.pdf`;
+      engine.FS.writeFile(path,new Uint8Array(await mergeFiles[i].arrayBuffer()));
+      paths.push(path);
+    }
+
+    const out="/merged_output.pdf";
+    const args=["--empty","--pages"];
+
+    for(const p of paths) args.push(p,"1-z");
+    args.push("--",out);
+
+    showStatus("mergeStatus","⏳ Đang gộp các PDF...",50);
+    engine.callMain(args);
+
+    const bytes=new Uint8Array(engine.FS.readFile(out));
+    const inputTotal=mergeFiles.reduce((s,f)=>s+f.size,0);
+
+    for(const p of paths){try{engine.FS.unlink(p)}catch(e){}}
+    try{engine.FS.unlink(out)}catch(e){}
+
+    downloadBlob(new Blob([bytes],{type:"application/pdf"}),"PDF_da_gop.pdf");
+
+    showStatus("mergeStatus",
+      `✅ Đã gộp ${mergeFiles.length} file.<br>`+
+      `Tổng dung lượng đầu vào: ${fmtBytes(inputTotal)}<br>`+
+      `Dung lượng PDF sau gộp: ${fmtBytes(bytes.byteLength)}`,100);
+
+  }catch(err){
+    console.error(err);
+    showStatus("mergeStatus","❌ Không thể gộp PDF: "+(err.message||err),0);
+  }finally{
+    $("mergeBtn").disabled=false;
+  }
+});
+
+/* =============== ẢNH → PDF =============== */
+let imageFiles=[];
+
+$("imageFiles").addEventListener("change",e=>{
+  imageFiles=[...e.target.files];
+  $("imgPdfBtn").disabled=!imageFiles.length;
+  $("imageInfo").innerHTML=imageFiles.length ?
+    imageFiles.map((f,i)=>`<div class="fileitem">${i+1}. ${f.name} (${fmtBytes(f.size)})</div>`).join(""):"";
+
+  $("imagePreview").innerHTML="";
+  imageFiles.slice(0,9).forEach(f=>{
+    const img=document.createElement("img");
+    const url=URL.createObjectURL(f);
+    img.src=url;
+    img.onload=()=>URL.revokeObjectURL(url);
+    $("imagePreview").appendChild(img);
+  });
+});
+
+function loadImage(file){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error("Ảnh không hợp lệ"))};
+    img.src=url;
+  });
+}
+
+$("imgPdfBtn").addEventListener("click",async()=>{
+  if(!imageFiles.length)return;
+
+  try{
+    $("imgPdfBtn").disabled=true;
+
+    const size=$("pageSize").value;
+    const orient=$("orientation").value;
+    const quality=$("imgQuality").value;
+
+    const preset={
+      low:{max:1600,jpeg:0.68},
+      medium:{max:2200,jpeg:0.82},
+      high:{max:3200,jpeg:0.92}
+    }[quality];
+
+    let jsPDFCtor=null;
+
+    // Load jsPDF only when this function is actually used.
+    if(!window.jspdf){
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement("script");
+        s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+        s.onload=resolve;s.onerror=reject;
+        document.head.appendChild(s);
+      });
+    }
+    jsPDFCtor=window.jspdf.jsPDF;
+
+    let doc=null;
+
+    for(let i=0;i<imageFiles.length;i++){
+      showStatus("imgPdfStatus",`⏳ Đang xử lý ảnh ${i+1}/${imageFiles.length}...`,i/imageFiles.length*100);
+
+      const img=await loadImage(imageFiles[i]);
+
+      let pw,ph;
+      if(size==="a4"){pw=210;ph=297}
+      else if(size==="letter"){pw=215.9;ph=279.4}
+      else{
+        pw=img.naturalWidth*0.264583;
+        ph=img.naturalHeight*0.264583;
+        pw=Math.max(20,Math.min(500,pw));
+        ph=Math.max(20,Math.min(500,ph));
+      }
+
+      let landscape=orient==="landscape" ||
+        (orient==="auto" && img.naturalWidth>img.naturalHeight);
+
+      if(size!=="auto"){
+        if(landscape && ph>pw)[pw,ph]=[ph,pw];
+        if(!landscape && pw>ph)[pw,ph]=[ph,pw];
+      }
+
+      if(!doc){
+        doc=new jsPDFCtor({
+          orientation:pw>ph?"landscape":"portrait",
+          unit:"mm",
+          format:[pw,ph],
+          compress:true
+        });
+      }else{
+        doc.addPage([pw,ph],pw>ph?"landscape":"portrait");
+      }
+
+      const canvas=document.createElement("canvas");
+      const scale=Math.min(1,preset.max/Math.max(img.naturalWidth,img.naturalHeight));
+      canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+      canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+
+      const ctx=canvas.getContext("2d");
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+
+      const data=canvas.toDataURL("image/jpeg",preset.jpeg);
+      const margin=4;
+      const maxW=pw-margin*2,maxH=ph-margin*2;
+      const ratio=Math.min(maxW/canvas.width,maxH/canvas.height);
+      const dw=canvas.width*ratio,dh=canvas.height*ratio;
+      const x=(pw-dw)/2,y=(ph-dh)/2;
+
+      doc.addImage(data,"JPEG",x,y,dw,dh,undefined,"FAST");
+
+      canvas.width=1;canvas.height=1;
+      await new Promise(r=>setTimeout(r,0));
+    }
+
+    const bytes=doc.output("arraybuffer");
+    downloadBlob(new Blob([bytes],{type:"application/pdf"}),"anh_da_tao_PDF.pdf");
+
+    showStatus("imgPdfStatus",
+      `✅ Đã tạo PDF ${imageFiles.length} trang.<br>`+
+      `Mức dung lượng: ${quality==="low"?"Thấp":quality==="medium"?"Trung bình":"Cao"}<br>`+
+      `Dung lượng đầu ra: ${fmtBytes(bytes.byteLength)}`,100);
+
+  }catch(err){
+    console.error(err);
+    showStatus("imgPdfStatus","❌ Không thể tạo PDF: "+(err.message||err),0);
+  }finally{
+    $("imgPdfBtn").disabled=false;
+  }
+});
+
+/* =============== PDF → ẢNH =============== */
+let pdfImgFile=null;
+
+$("pdfToImageFile").addEventListener("change",e=>{
+  pdfImgFile=e.target.files[0]||null;
+  $("pdfImgBtn").disabled=!pdfImgFile;
+  $("pdfImgInfo").innerHTML=pdfImgFile ?
+    `📄 ${pdfImgFile.name} — ${fmtBytes(pdfImgFile.size)}`:"";
+});
+
+$("pdfImgBtn").addEventListener("click",async()=>{
+  if(!pdfImgFile)return;
+
+  try{
+    $("pdfImgBtn").disabled=true;
+    showStatus("pdfImgStatus","⏳ Đang mở PDF...",0);
+
+    const pdf=await pdfjsLib.getDocument({data:await pdfImgFile.arrayBuffer()}).promise;
+    const total=pdf.numPages;
+    const format=$("imageFormat").value;
+    const scale=parseFloat($("renderScale").value);
+    const outputs=[];
+
+    for(let i=1;i<=total;i++){
+      showStatus("pdfImgStatus",`⏳ Đang chuyển trang ${i}/${total}...`,(i-1)/total*100);
+
+      const page=await pdf.getPage(i);
+      const viewport=page.getViewport({scale});
+      const canvas=document.createElement("canvas");
+
+      canvas.width=Math.ceil(viewport.width);
+      canvas.height=Math.ceil(viewport.height);
+
+      const ctx=canvas.getContext("2d",{alpha:false});
+      await page.render({canvasContext:ctx,viewport}).promise;
+
+      const mime=format==="png"?"image/png":"image/jpeg";
+      const quality=format==="png"?undefined:0.90;
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,mime,quality));
+
+      outputs.push({
+        name:`${baseName(pdfImgFile.name)}_trang_${String(i).padStart(String(total).length,"0")}.${format==="png"?"png":"jpg"}`,
+        data:blob
+      });
+
+      canvas.width=1;canvas.height=1;
+      await new Promise(r=>setTimeout(r,0));
+    }
+
+    if(total===1){
+      downloadBlob(outputs[0].data,outputs[0].name);
+      showStatus("pdfImgStatus",`✅ Đã tạo 1 ảnh — ${fmtBytes(outputs[0].data.size)}.`,100);
+    }else{
+      const totalImageSize=outputs.reduce((s,x)=>s+x.data.size,0);
+      const zipSize=await makeZip(outputs,`${baseName(pdfImgFile.name)}_images.zip`);
+
+      showStatus("pdfImgStatus",
+        `✅ Đã chuyển ${total} trang và tạo ZIP.<br>`+
+        `PDF gốc: ${fmtBytes(pdfImgFile.size)}<br>`+
+        `Tổng ảnh: ${fmtBytes(totalImageSize)}<br>`+
+        `ZIP: ${fmtBytes(zipSize)}`,100);
+    }
+
+  }catch(err){
+    console.error(err);
+    showStatus("pdfImgStatus","❌ Không thể chuyển PDF sang ảnh: "+(err.message||err),0);
+  }finally{
+    $("pdfImgBtn").disabled=false;
+  }
+});
+</script>
+</body>
+</html>
