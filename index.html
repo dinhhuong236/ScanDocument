@@ -1,0 +1,443 @@
+<!DOCTYPE html>https://github.com/dinhhuong236/ScanDocument/tree/main
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scanner Pro - Smart Edge</title>
+    <!-- Tải thư viện jsPDF cục bộ -->
+    <script src="jspdf.umd.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; padding: 15px; background: #f4f4f9; margin: 0; }
+        h2 { margin-top: 10px; font-size: 22px; }
+        .btn { padding: 15px 25px; margin: 5px; font-size: 16px; font-weight: bold; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; max-width: 320px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .btn-scan { background-color: #007aff; }
+        .btn-pdf-single { background-color: #34c759; }
+        .btn-pdf-multi { background-color: #ff9500; }
+        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .settings-panel { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 10px auto; width: 100%; max-width: 320px; text-align: left; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .slider-group { margin-bottom: 12px; }
+        .slider-group:last-child { margin-bottom: 0; }
+        .slider-group label { font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; margin-bottom: 8px; color: #333; }
+        .slider-group input[type=range] { width: 100%; margin: 0; }
+        .val-badge { background: #007aff; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+
+        .filename-input { padding: 15px; margin: 10px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; width: 100%; max-width: 320px; box-sizing: border-box; text-align: center; transition: border-color 0.3s;}
+        .filename-input:focus { outline: none; border-color: #007aff; }
+        #preview { display: flex; flex-direction: column; align-items: center; margin-top: 20px; gap: 15px; }
+        .img-container { position: relative; border: 2px solid #ddd; border-radius: 8px; overflow: hidden; max-width: 100%; width: 320px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .img-container img { width: 100%; display: block; }
+        .page-num { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.6); color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;}
+        #loading { color: #d9534f; font-weight: bold; margin-bottom: 10px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <h2>Máy Quét Thông Minh (Pro)</h2>
+    <div id="loading">⏳ Đang tải lõi xử lý AI (OpenCV)... Vui lòng đợi!</div>
+    
+    <div class="settings-panel">
+        <div class="slider-group">
+            <label>
+                Đậm chữ & Trắng nền
+                <span class="val-badge" id="whiteVal">5</span>
+            </label>
+            <input type="range" id="whiteSlider" min="1" max="10" value="5" step="1" oninput="document.getElementById('whiteVal').innerText = this.value">
+        </div>
+        <div class="slider-group">
+            <label>
+                Độ rực màu (Mộc đỏ/chữ ký)
+                <span class="val-badge" id="colorVal">1.2x</span>
+            </label>
+            <input type="range" id="colorSlider" min="0.5" max="2.5" value="1.2" step="0.1" oninput="document.getElementById('colorVal').innerText = this.value + 'x'">
+        </div>
+        <div class="slider-group">
+            <label>
+                Viền chuyển mềm
+                <span class="val-badge" id="edgeVal">2.0%</span>
+            </label>
+            <input type="range" id="edgeSlider" min="0.1" max="5.0" value="2.0" step="0.1" oninput="document.getElementById('edgeVal').innerText = this.value + '%'">
+        </div>
+    </div>
+
+    <input type="file" id="cameraInput" accept="image/*" multiple style="display: none;" disabled>
+    
+    <button class="btn btn-scan" id="scanBtn" onclick="document.getElementById('cameraInput').click()" disabled>📸 Chụp / Chọn nhiều ảnh</button>
+    
+    <div id="exportSection" style="display: none; margin-top: 15px;">
+        <input type="text" id="filenameInput" class="filename-input" placeholder="Nhập tên file (VD: Hop_Dong)">
+        <div style="display: flex; flex-direction: column; align-items: center;">
+            <button class="btn btn-pdf-single" onclick="generateSinglePDF()">📄 Xuất 1 file PDF chung</button>
+            <button class="btn btn-pdf-multi" onclick="generateMultiplePDFs()">📑 Xuất các file PDF rời</button>
+        </div>
+    </div>
+
+    <div id="preview"></div>
+
+    <script async src="opencv.js" onload="onOpenCvReady();"></script>
+
+    <script>
+        let cvReady = false;
+        const images = [];
+        const cameraInput = document.getElementById('cameraInput');
+        const preview = document.getElementById('preview');
+        const exportSection = document.getElementById('exportSection');
+        const loadingDiv = document.getElementById('loading');
+        const scanBtn = document.getElementById('scanBtn');
+
+        function onOpenCvReady() {
+            cvReady = true;
+            loadingDiv.style.color = '#5cb85c';
+            loadingDiv.innerText = '✅ Hệ thống đã sẵn sàng!';
+            cameraInput.disabled = false;
+            scanBtn.disabled = false;
+            setTimeout(() => { loadingDiv.style.display = 'none'; }, 3000);
+        }
+
+        cameraInput.addEventListener('change', async function(e) {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+
+            loadingDiv.style.display = 'block';
+            loadingDiv.style.color = '#007aff';
+            loadingDiv.innerText = `⏳ Đang xử lý ${files.length} ảnh... Vui lòng đợi!`;
+            scanBtn.disabled = true;
+            exportSection.style.display = 'none';
+
+            for (let i = 0; i < files.length; i++) {
+                await processFile(files[i]);
+            }
+
+            loadingDiv.style.display = 'none';
+            scanBtn.disabled = false;
+            cameraInput.value = '';
+        });
+
+        function processFile(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        
+                        const MAX_WIDTH = 5000; 
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > MAX_WIDTH) {
+                            height = Math.round((height * MAX_WIDTH) / width);
+                            width = MAX_WIDTH;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        processImageCV(canvas);
+                        
+                        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.98);
+                        images.push(compressedDataUrl);
+                        renderPreview();
+                        resolve(); 
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function processImageCV(canvas) {
+            if (!cvReady) return;
+
+            let whitenessVal = parseFloat(document.getElementById('whiteSlider').value);
+            let colorBoostVal = parseFloat(document.getElementById('colorSlider').value);
+            let edgePercentVal = parseFloat(document.getElementById('edgeSlider').value) / 100.0;
+
+            try {
+                let src = cv.imread(canvas); 
+                let smallDst = new cv.Mat();
+                
+                let processWidth = 800;
+                let ratio = src.cols / processWidth;
+                let processHeight = Math.round(src.rows / ratio);
+                
+                cv.resize(src, smallDst, new cv.Size(processWidth, processHeight), 0, 0, cv.INTER_AREA);
+                cv.cvtColor(smallDst, smallDst, cv.COLOR_RGBA2GRAY, 0);
+                cv.GaussianBlur(smallDst, smallDst, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+                cv.Canny(smallDst, smallDst, 75, 200);
+                
+                let M_dilate = cv.Mat.ones(3, 3, cv.CV_8U);
+                cv.dilate(smallDst, smallDst, M_dilate, new cv.Point(-1, -1), 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+
+                let contours = new cv.MatVector();
+                let hierarchy = new cv.Mat();
+                cv.findContours(smallDst, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+                let maxArea = 0;
+                let maxContour = null;
+
+                for (let i = 0; i < contours.size(); ++i) {
+                    let cnt = contours.get(i);
+                    let area = cv.contourArea(cnt);
+                    
+                    if (area > (processWidth * processHeight * 0.1)) { 
+                        let tmp = new cv.Mat();
+                        cv.approxPolyDP(cnt, tmp, 0.02 * cv.arcLength(cnt, true), true);
+                        if (tmp.rows === 4 && area > maxArea) {
+                            maxArea = area;
+                            if (maxContour) maxContour.delete();
+                            maxContour = tmp.clone();
+                        }
+                        tmp.delete();
+                    }
+                }
+
+                if (maxContour) {
+                    let pts = [];
+                    for (let i = 0; i < 4; i++) {
+                        pts.push({
+                            x: maxContour.data32S[i*2] * ratio, 
+                            y: maxContour.data32S[i*2+1] * ratio
+                        });
+                    }
+
+                    pts.sort((a,b) => (a.x + a.y) - (b.x + b.y));
+                    let tl = pts[0];
+                    let br = pts[3];
+                    let rem = [pts[1], pts[2]].sort((a,b) => (a.y - a.x) - (b.y - b.x));
+                    let tr = rem[0];
+                    let bl = rem[1];
+
+                    let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+
+                    let widthA = Math.sqrt(Math.pow(br.x - bl.x, 2) + Math.pow(br.y - bl.y, 2));
+                    let widthB = Math.sqrt(Math.pow(tr.x - tl.x, 2) + Math.pow(tr.y - tl.y, 2));
+                    let maxWidth = Math.max(parseInt(widthA), parseInt(widthB));
+
+                    let heightA = Math.sqrt(Math.pow(tr.x - br.x, 2) + Math.pow(tr.y - br.y, 2));
+                    let heightB = Math.sqrt(Math.pow(tl.x - bl.x, 2) + Math.pow(tl.y - bl.y, 2));
+                    let maxHeight = Math.max(parseInt(heightA), parseInt(heightB));
+
+                    let dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, maxWidth, 0, maxWidth, maxHeight, 0, maxHeight]);
+
+                    let M = cv.getPerspectiveTransform(srcTri, dstTri);
+                    let warped = new cv.Mat();
+                    let dsize = new cv.Size(maxWidth, maxHeight);
+                    cv.warpPerspective(src, warped, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+                    // Cạo viền 1% chống rác mép nền bàn
+                    let shaveX = Math.floor(maxWidth * 0.01);
+                    let shaveY = Math.floor(maxHeight * 0.01);
+                    let shaveWidth = maxWidth - (shaveX * 2);
+                    let shaveHeight = maxHeight - (shaveY * 2);
+                    let rectShave = new cv.Rect(shaveX, shaveY, shaveWidth, shaveHeight);
+                    let shavedWarped = warped.roi(rectShave);
+
+                    cv.cvtColor(shavedWarped, shavedWarped, cv.COLOR_RGBA2RGB, 0); 
+                    
+                    // ==========================================
+                    // 1. DILATE MASK - CHỐNG NHOÈ & BẢO TOÀN CHI TIẾT
+                    // ==========================================
+                    let bg = new cv.Mat();
+                    let bgScale = 0.1;
+                    let bgW = Math.max(1, Math.floor(shaveWidth * bgScale));
+                    let bgH = Math.max(1, Math.floor(shaveHeight * bgScale));
+                    cv.resize(shavedWarped, bg, new cv.Size(bgW, bgH), 0, 0, cv.INTER_AREA);
+                    
+                    let M_bg = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+                    cv.dilate(bg, bg, M_bg, new cv.Point(-1, -1), 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+                    
+                    cv.GaussianBlur(bg, bg, new cv.Size(9, 9), 0, 0, cv.BORDER_DEFAULT);
+                    cv.resize(bg, bg, new cv.Size(shaveWidth, shaveHeight), 0, 0, cv.INTER_LINEAR);
+                    
+                    cv.divide(shavedWarped, bg, shavedWarped, 255.0);
+
+                    // ==========================================
+                    // 2. KÉO SÁNG NỀN & NEO ĐIỂM ĐEN (Chống bợt chữ)
+                    // ==========================================
+                    let alpha = 1.0 + (whitenessVal * 0.04); 
+                    let beta = -(whitenessVal * 8);      
+                    cv.convertScaleAbs(shavedWarped, shavedWarped, alpha, beta);
+
+                    // ==========================================
+                    // 3. BƠM MÀU CHỐNG BỆT
+                    // ==========================================
+                    let hsv = new cv.Mat();
+                    cv.cvtColor(shavedWarped, hsv, cv.COLOR_RGB2HSV, 0);
+                    let hsvPlanes = new cv.MatVector();
+                    cv.split(hsv, hsvPlanes);
+                    
+                    let s = hsvPlanes.get(1); 
+                    cv.convertScaleAbs(s, s, colorBoostVal, 0);
+                    
+                    let newHsvPlanes = new cv.MatVector();
+                    newHsvPlanes.push_back(hsvPlanes.get(0));
+                    newHsvPlanes.push_back(s);
+                    newHsvPlanes.push_back(hsvPlanes.get(2));
+                    
+                    cv.merge(newHsvPlanes, hsv);
+                    cv.cvtColor(hsv, shavedWarped, cv.COLOR_HSV2RGB, 0);
+
+                    // ==========================================
+                    // 4. TRÍCH XUẤT MÀU ĐỒNG BỘ THÔNG MINH (LOẠI BỎ RÁC)
+                    // ==========================================
+                    let edgeFillX = Math.max(1, Math.floor(shaveWidth * edgePercentVal));
+                    let edgeFillY = Math.max(1, Math.floor(shaveHeight * edgePercentVal));
+
+                    let topRoi = shavedWarped.roi(new cv.Rect(0, 0, shaveWidth, edgeFillY));
+                    let bottomRoi = shavedWarped.roi(new cv.Rect(0, shaveHeight - edgeFillY, shaveWidth, edgeFillY));
+                    let leftRoi = shavedWarped.roi(new cv.Rect(0, 0, edgeFillX, shaveHeight));
+                    let rightRoi = shavedWarped.roi(new cv.Rect(shaveWidth - edgeFillX, 0, edgeFillX, shaveHeight));
+
+                    let rois = [topRoi, bottomRoi, leftRoi, rightRoi];
+                    let r_arr = [], g_arr = [], b_arr = [];
+
+                    // Thu nhỏ các viền về 20x20 pixel để lấy mẫu ngẫu nhiên (Rất nhanh)
+                    for (let roi of rois) {
+                        let small = new cv.Mat();
+                        cv.resize(roi, small, new cv.Size(20, 20), 0, 0, cv.INTER_AREA);
+                        let data = small.data;
+                        for (let i = 0; i < data.length; i += 3) { 
+                            r_arr.push(data[i]);
+                            g_arr.push(data[i+1]);
+                            b_arr.push(data[i+2]);
+                        }
+                        small.delete();
+                    }
+
+                    // Sắp xếp các mảng màu từ Tối -> Sáng
+                    r_arr.sort((a, b) => a - b);
+                    g_arr.sort((a, b) => a - b);
+                    b_arr.sort((a, b) => a - b);
+
+                    // BÍ QUYẾT: Dùng Phân vị thứ 75 (75th Percentile)
+                    // - Thuật toán sẽ BỎ QUA 75% các pixel tối hơn (chính là gạch đen, vết rách, lỗ bấm)
+                    // - Chỉ bốc đúng màu sáng phổ biến nhất đại diện cho nền giấy.
+                    let p_idx = Math.floor(r_arr.length * 0.75);
+                    let syncColor = [r_arr[p_idx], g_arr[p_idx], b_arr[p_idx]];
+
+                    // ==========================================
+                    // 5. VẼ ẢNH VÀ ĐỔ VIỀN CHUYỂN MỀM ĐỒNG BỘ
+                    // ==========================================
+                    canvas.width = shaveWidth;
+                    canvas.height = shaveHeight;
+                    cv.imshow(canvas, shavedWarped);
+
+                    let ctx = canvas.getContext('2d');
+                    
+                    function drawSharpFeatheredEdge(x0, y0, x1, y1, rectX, rectY, rectW, rectH, trueColor) {
+                        let r = Math.round(trueColor[0]);
+                        let g = Math.round(trueColor[1]);
+                        let b = Math.round(trueColor[2]);
+
+                        let grad = ctx.createLinearGradient(x0, y0, x1, y1);
+                        grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);   
+                        grad.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, 1)`); 
+                        grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);   
+                        ctx.fillStyle = grad;
+                        ctx.fillRect(rectX, rectY, rectW, rectH);
+                    }
+
+                    drawSharpFeatheredEdge(0, 0, 0, edgeFillY, 0, 0, shaveWidth, edgeFillY, syncColor); 
+                    drawSharpFeatheredEdge(0, shaveHeight, 0, shaveHeight - edgeFillY, 0, shaveHeight - edgeFillY, shaveWidth, edgeFillY, syncColor); 
+                    drawSharpFeatheredEdge(0, 0, edgeFillX, 0, 0, 0, edgeFillX, shaveHeight, syncColor); 
+                    drawSharpFeatheredEdge(shaveWidth, 0, shaveWidth - edgeFillX, 0, shaveWidth - edgeFillX, 0, edgeFillX, shaveHeight, syncColor); 
+
+                    // Dọn dẹp RAM
+                    srcTri.delete(); dstTri.delete(); M.delete(); warped.delete(); maxContour.delete();
+                    rectShave = null; shavedWarped.delete(); bg.delete(); M_bg.delete();
+                    topRoi.delete(); bottomRoi.delete(); leftRoi.delete(); rightRoi.delete();
+                    hsv.delete(); hsvPlanes.delete(); newHsvPlanes.delete(); s.delete();
+                } else {
+                    alert("⚠️ Không tìm thấy 4 góc trên một số ảnh. Hãy đảm bảo chụp trên nền tương phản.");
+                }
+
+                src.delete(); smallDst.delete(); contours.delete(); hierarchy.delete(); M_dilate.delete();
+            } catch (err) {
+                console.error("Lỗi OpenCV:", err);
+            }
+        }
+
+        function renderPreview() {
+            preview.innerHTML = '';
+            images.forEach((src, index) => {
+                const div = document.createElement('div');
+                div.className = 'img-container';
+                div.innerHTML = `
+                    <span class="page-num">Trang ${index + 1}</span>
+                    <img src="${src}" alt="Trang ${index + 1}">
+                `;
+                preview.appendChild(div);
+            });
+            exportSection.style.display = images.length > 0 ? 'block' : 'none';
+        }
+
+        function getBaseFilename() {
+            let customName = document.getElementById('filenameInput').value.trim();
+            if (customName === "") customName = "Tai_Lieu_Quet";
+            return customName.replace(/\.pdf$/i, ''); 
+        }
+
+        async function generateSinglePDF() {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+
+            for (let i = 0; i < images.length; i++) {
+                if (i > 0) pdf.addPage();
+                
+                const props = pdf.getImageProperties(images[i]);
+                const ratio = props.width / props.height;
+                let finalWidth = pageWidth;
+                let finalHeight = pageWidth / ratio;
+
+                if (finalHeight > pageHeight) {
+                    finalHeight = pageHeight;
+                    finalWidth = pageHeight * ratio;
+                }
+
+                const x = (pageWidth - finalWidth) / 2;
+                const y = (pageHeight - finalHeight) / 2;
+
+                pdf.addImage(images[i], 'JPEG', x, y, finalWidth, finalHeight, undefined, 'FAST');
+            }
+
+            let fileName = getBaseFilename() + ".pdf";
+            pdf.save(fileName);
+        }
+
+        async function generateMultiplePDFs() {
+            const { jsPDF } = window.jspdf;
+            let baseName = getBaseFilename();
+
+            for (let i = 0; i < images.length; i++) {
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+
+                const props = pdf.getImageProperties(images[i]);
+                const ratio = props.width / props.height;
+                let finalWidth = pageWidth;
+                let finalHeight = pageWidth / ratio;
+
+                if (finalHeight > pageHeight) {
+                    finalHeight = pageHeight;
+                    finalWidth = pageHeight * ratio;
+                }
+
+                const x = (pageWidth - finalWidth) / 2;
+                const y = (pageHeight - finalHeight) / 2;
+
+                pdf.addImage(images[i], 'JPEG', x, y, finalWidth, finalHeight, undefined, 'FAST');
+                
+                pdf.save(`${baseName}_Trang_${i + 1}.pdf`);
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+    </script>
+</body>
+</html>
