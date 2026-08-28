@@ -1,43 +1,84 @@
-<!DOCTYPE html>https://github.com/dinhhuong236/ScanDocument/tree/main
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Scanner Pro - Smart Edge</title>
-    <!-- Tải thư viện jsPDF cục bộ -->
+    <title>Scanner Pro - Final</title>
     <script src="jspdf.umd.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; padding: 15px; background: #f4f4f9; margin: 0; }
-        h2 { margin-top: 10px; font-size: 22px; }
+        h2 { margin-top: 10px; font-size: 22px; color: #1c1c1e; }
+        
+        /* Nút bấm */
         .btn { padding: 15px 25px; margin: 5px; font-size: 16px; font-weight: bold; color: white; border: none; border-radius: 8px; cursor: pointer; width: 100%; max-width: 320px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .btn-scan { background-color: #007aff; }
         .btn-pdf-single { background-color: #34c759; }
         .btn-pdf-multi { background-color: #ff9500; }
         .btn:disabled { background-color: #ccc; cursor: not-allowed; }
         
+        /* Bảng Hướng dẫn quét */
+        .instruction-box { background: #eef5ff; border: 1px dashed #007aff; border-radius: 8px; padding: 12px; margin: 10px auto; width: 100%; max-width: 320px; text-align: left; font-size: 13px; color: #333; display: flex; align-items: center; gap: 12px; box-sizing: border-box; }
+        .illus-box { width: 50px; height: 50px; background: #2c2c2e; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; border: 2px solid #ddd; }
+        .illus-paper { background: white; width: 26px; height: 36px; border-radius: 2px; box-shadow: 0 0 5px rgba(255,255,255,0.5); transform: rotate(-5deg); }
+        .illus-scanline { position: absolute; width: 100%; height: 2px; background: #34c759; top: 50%; box-shadow: 0 0 6px #34c759; }
+
+        /* Bảng Settings */
         .settings-panel { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin: 10px auto; width: 100%; max-width: 320px; text-align: left; box-sizing: border-box; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .slider-group { margin-bottom: 12px; }
         .slider-group:last-child { margin-bottom: 0; }
         .slider-group label { font-size: 14px; font-weight: bold; display: flex; justify-content: space-between; margin-bottom: 8px; color: #333; }
         .slider-group input[type=range] { width: 100%; margin: 0; }
         .val-badge { background: #007aff; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+        .quality-select { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; outline: none; background: #f9f9f9; }
 
+        /* Tên file & Khung ảnh preview */
         .filename-input { padding: 15px; margin: 10px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; width: 100%; max-width: 320px; box-sizing: border-box; text-align: center; transition: border-color 0.3s;}
         .filename-input:focus { outline: none; border-color: #007aff; }
         #preview { display: flex; flex-direction: column; align-items: center; margin-top: 20px; gap: 15px; }
         .img-container { position: relative; border: 2px solid #ddd; border-radius: 8px; overflow: hidden; max-width: 100%; width: 320px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         .img-container img { width: 100%; display: block; }
-        .page-num { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.6); color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;}
+        .page-num { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.6); color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; z-index: 10; }
+        
+        /* Nút xóa ảnh */
+        .btn-delete { position: absolute; top: 8px; right: 8px; background: rgba(255, 59, 48, 0.9); color: white; border: none; border-radius: 50%; width: 32px; height: 32px; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.3); z-index: 10; transition: transform 0.1s; }
+        .btn-delete:active { transform: scale(0.9); }
+
         #loading { color: #d9534f; font-weight: bold; margin-bottom: 10px; font-size: 14px; }
     </style>
 </head>
 <body>
 
-    <h2>Máy Quét Thông Minh (Pro)</h2>
+    <h2>Máy Quét Thông Minh</h2>
     <div id="loading">⏳ Đang tải lõi xử lý AI (OpenCV)... Vui lòng đợi!</div>
     
+    <!-- Hướng dẫn quét -->
+    <div class="instruction-box">
+        <div class="illus-box">
+            <div class="illus-paper"></div>
+            <div class="illus-scanline"></div>
+        </div>
+        <div>
+            <strong>💡 Mẹo Quét Nét & Chuẩn</strong><br>
+            • Đặt giấy lên mặt bàn <b>màu tối/tương phản</b>.<br>
+            • Đảm bảo đủ sáng, tránh bị sấp bóng.<br>
+            • Giữ điện thoại song song với mặt giấy.
+        </div>
+    </div>
+
+    <!-- Bảng Tùy chỉnh thông số -->
     <div class="settings-panel">
         <div class="slider-group">
+            <label>
+                Dung lượng bản Scan
+                <span class="val-badge" id="qualVal">Trung bình</span>
+            </label>
+            <select id="qualitySelect" class="quality-select" onchange="document.getElementById('qualVal').innerText = this.options[this.selectedIndex].text.split(' ')[0]">
+                <option value="low">Nhẹ (Gửi file nhanh, size nhỏ)</option>
+                <option value="medium" selected>Trung bình (Khuyên dùng)</option>
+                <option value="high">Cao (Nét căng tuyệt đối, size lớn)</option>
+            </select>
+        </div>
+        <div class="slider-group" style="margin-top: 15px;">
             <label>
                 Đậm chữ & Trắng nền
                 <span class="val-badge" id="whiteVal">5</span>
@@ -46,7 +87,7 @@
         </div>
         <div class="slider-group">
             <label>
-                Độ rực màu (Mộc đỏ/chữ ký)
+                Độ rực màu (Mộc đỏ)
                 <span class="val-badge" id="colorVal">1.2x</span>
             </label>
             <input type="range" id="colorSlider" min="0.5" max="2.5" value="1.2" step="0.1" oninput="document.getElementById('colorVal').innerText = this.value + 'x'">
@@ -61,7 +102,6 @@
     </div>
 
     <input type="file" id="cameraInput" accept="image/*" multiple style="display: none;" disabled>
-    
     <button class="btn btn-scan" id="scanBtn" onclick="document.getElementById('cameraInput').click()" disabled>📸 Chụp / Chọn nhiều ảnh</button>
     
     <div id="exportSection" style="display: none; margin-top: 15px;">
@@ -78,7 +118,7 @@
 
     <script>
         let cvReady = false;
-        const images = [];
+        const images = []; // Mảng chứa ảnh đã xử lý
         const cameraInput = document.getElementById('cameraInput');
         const preview = document.getElementById('preview');
         const exportSection = document.getElementById('exportSection');
@@ -122,7 +162,19 @@
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
                         
-                        const MAX_WIDTH = 5000; 
+                        // Lấy cấu hình dung lượng ảnh
+                        let qualitySetting = document.getElementById('qualitySelect').value;
+                        let MAX_WIDTH = 2500; // Medium default
+                        let jpegQuality = 0.85; 
+
+                        if (qualitySetting === 'low') {
+                            MAX_WIDTH = 1200;
+                            jpegQuality = 0.60;
+                        } else if (qualitySetting === 'high') {
+                            MAX_WIDTH = 4000;
+                            jpegQuality = 0.98;
+                        }
+
                         let width = img.width;
                         let height = img.height;
 
@@ -135,10 +187,13 @@
                         canvas.height = height;
                         ctx.drawImage(img, 0, 0, width, height);
 
+                        // Gọi AI xử lý cắt và chỉnh màu
                         processImageCV(canvas);
                         
-                        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.98);
+                        // Lưu lại thành chuẩn JPEG theo mức nén
+                        const compressedDataUrl = canvas.toDataURL('image/jpeg', jpegQuality);
                         images.push(compressedDataUrl);
+                        
                         renderPreview();
                         resolve(); 
                     };
@@ -148,6 +203,7 @@
             });
         }
 
+        // Lõi AI
         function processImageCV(canvas) {
             if (!cvReady) return;
 
@@ -197,18 +253,13 @@
                 if (maxContour) {
                     let pts = [];
                     for (let i = 0; i < 4; i++) {
-                        pts.push({
-                            x: maxContour.data32S[i*2] * ratio, 
-                            y: maxContour.data32S[i*2+1] * ratio
-                        });
+                        pts.push({ x: maxContour.data32S[i*2] * ratio, y: maxContour.data32S[i*2+1] * ratio });
                     }
 
                     pts.sort((a,b) => (a.x + a.y) - (b.x + b.y));
-                    let tl = pts[0];
-                    let br = pts[3];
+                    let tl = pts[0]; let br = pts[3];
                     let rem = [pts[1], pts[2]].sort((a,b) => (a.y - a.x) - (b.y - b.x));
-                    let tr = rem[0];
-                    let bl = rem[1];
+                    let tr = rem[0]; let bl = rem[1];
 
                     let srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
 
@@ -227,7 +278,6 @@
                     let dsize = new cv.Size(maxWidth, maxHeight);
                     cv.warpPerspective(src, warped, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
 
-                    // Cạo viền 1% chống rác mép nền bàn
                     let shaveX = Math.floor(maxWidth * 0.01);
                     let shaveY = Math.floor(maxHeight * 0.01);
                     let shaveWidth = maxWidth - (shaveX * 2);
@@ -237,9 +287,7 @@
 
                     cv.cvtColor(shavedWarped, shavedWarped, cv.COLOR_RGBA2RGB, 0); 
                     
-                    // ==========================================
-                    // 1. DILATE MASK - CHỐNG NHOÈ & BẢO TOÀN CHI TIẾT
-                    // ==========================================
+                    // Lớp Mask ăn mòn bảo toàn chi tiết
                     let bg = new cv.Mat();
                     let bgScale = 0.1;
                     let bgW = Math.max(1, Math.floor(shaveWidth * bgScale));
@@ -248,90 +296,62 @@
                     
                     let M_bg = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
                     cv.dilate(bg, bg, M_bg, new cv.Point(-1, -1), 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
-                    
                     cv.GaussianBlur(bg, bg, new cv.Size(9, 9), 0, 0, cv.BORDER_DEFAULT);
                     cv.resize(bg, bg, new cv.Size(shaveWidth, shaveHeight), 0, 0, cv.INTER_LINEAR);
-                    
                     cv.divide(shavedWarped, bg, shavedWarped, 255.0);
 
-                    // ==========================================
-                    // 2. KÉO SÁNG NỀN & NEO ĐIỂM ĐEN (Chống bợt chữ)
-                    // ==========================================
+                    // Kéo sáng nền
                     let alpha = 1.0 + (whitenessVal * 0.04); 
                     let beta = -(whitenessVal * 8);      
                     cv.convertScaleAbs(shavedWarped, shavedWarped, alpha, beta);
 
-                    // ==========================================
-                    // 3. BƠM MÀU CHỐNG BỆT
-                    // ==========================================
+                    // Bơm màu chống bệt
                     let hsv = new cv.Mat();
                     cv.cvtColor(shavedWarped, hsv, cv.COLOR_RGB2HSV, 0);
                     let hsvPlanes = new cv.MatVector();
                     cv.split(hsv, hsvPlanes);
-                    
                     let s = hsvPlanes.get(1); 
                     cv.convertScaleAbs(s, s, colorBoostVal, 0);
-                    
                     let newHsvPlanes = new cv.MatVector();
                     newHsvPlanes.push_back(hsvPlanes.get(0));
                     newHsvPlanes.push_back(s);
                     newHsvPlanes.push_back(hsvPlanes.get(2));
-                    
                     cv.merge(newHsvPlanes, hsv);
                     cv.cvtColor(hsv, shavedWarped, cv.COLOR_HSV2RGB, 0);
 
-                    // ==========================================
-                    // 4. TRÍCH XUẤT MÀU ĐỒNG BỘ THÔNG MINH (LOẠI BỎ RÁC)
-                    // ==========================================
+                    // Viền động 75th Percentile
                     let edgeFillX = Math.max(1, Math.floor(shaveWidth * edgePercentVal));
                     let edgeFillY = Math.max(1, Math.floor(shaveHeight * edgePercentVal));
 
-                    let topRoi = shavedWarped.roi(new cv.Rect(0, 0, shaveWidth, edgeFillY));
-                    let bottomRoi = shavedWarped.roi(new cv.Rect(0, shaveHeight - edgeFillY, shaveWidth, edgeFillY));
-                    let leftRoi = shavedWarped.roi(new cv.Rect(0, 0, edgeFillX, shaveHeight));
-                    let rightRoi = shavedWarped.roi(new cv.Rect(shaveWidth - edgeFillX, 0, edgeFillX, shaveHeight));
-
-                    let rois = [topRoi, bottomRoi, leftRoi, rightRoi];
+                    let rois = [
+                        shavedWarped.roi(new cv.Rect(0, 0, shaveWidth, edgeFillY)),
+                        shavedWarped.roi(new cv.Rect(0, shaveHeight - edgeFillY, shaveWidth, edgeFillY)),
+                        shavedWarped.roi(new cv.Rect(0, 0, edgeFillX, shaveHeight)),
+                        shavedWarped.roi(new cv.Rect(shaveWidth - edgeFillX, 0, edgeFillX, shaveHeight))
+                    ];
+                    
                     let r_arr = [], g_arr = [], b_arr = [];
-
-                    // Thu nhỏ các viền về 20x20 pixel để lấy mẫu ngẫu nhiên (Rất nhanh)
                     for (let roi of rois) {
                         let small = new cv.Mat();
                         cv.resize(roi, small, new cv.Size(20, 20), 0, 0, cv.INTER_AREA);
                         let data = small.data;
                         for (let i = 0; i < data.length; i += 3) { 
-                            r_arr.push(data[i]);
-                            g_arr.push(data[i+1]);
-                            b_arr.push(data[i+2]);
+                            r_arr.push(data[i]); g_arr.push(data[i+1]); b_arr.push(data[i+2]);
                         }
-                        small.delete();
+                        small.delete(); roi.delete();
                     }
 
-                    // Sắp xếp các mảng màu từ Tối -> Sáng
-                    r_arr.sort((a, b) => a - b);
-                    g_arr.sort((a, b) => a - b);
-                    b_arr.sort((a, b) => a - b);
-
-                    // BÍ QUYẾT: Dùng Phân vị thứ 75 (75th Percentile)
-                    // - Thuật toán sẽ BỎ QUA 75% các pixel tối hơn (chính là gạch đen, vết rách, lỗ bấm)
-                    // - Chỉ bốc đúng màu sáng phổ biến nhất đại diện cho nền giấy.
+                    r_arr.sort((a, b) => a - b); g_arr.sort((a, b) => a - b); b_arr.sort((a, b) => a - b);
                     let p_idx = Math.floor(r_arr.length * 0.75);
                     let syncColor = [r_arr[p_idx], g_arr[p_idx], b_arr[p_idx]];
 
-                    // ==========================================
-                    // 5. VẼ ẢNH VÀ ĐỔ VIỀN CHUYỂN MỀM ĐỒNG BỘ
-                    // ==========================================
                     canvas.width = shaveWidth;
                     canvas.height = shaveHeight;
                     cv.imshow(canvas, shavedWarped);
 
                     let ctx = canvas.getContext('2d');
-                    
                     function drawSharpFeatheredEdge(x0, y0, x1, y1, rectX, rectY, rectW, rectH, trueColor) {
-                        let r = Math.round(trueColor[0]);
-                        let g = Math.round(trueColor[1]);
-                        let b = Math.round(trueColor[2]);
-
+                        let r = Math.round(trueColor[0]); let g = Math.round(trueColor[1]); let b = Math.round(trueColor[2]);
                         let grad = ctx.createLinearGradient(x0, y0, x1, y1);
                         grad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);   
                         grad.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, 1)`); 
@@ -345,10 +365,8 @@
                     drawSharpFeatheredEdge(0, 0, edgeFillX, 0, 0, 0, edgeFillX, shaveHeight, syncColor); 
                     drawSharpFeatheredEdge(shaveWidth, 0, shaveWidth - edgeFillX, 0, shaveWidth - edgeFillX, 0, edgeFillX, shaveHeight, syncColor); 
 
-                    // Dọn dẹp RAM
                     srcTri.delete(); dstTri.delete(); M.delete(); warped.delete(); maxContour.delete();
                     rectShave = null; shavedWarped.delete(); bg.delete(); M_bg.delete();
-                    topRoi.delete(); bottomRoi.delete(); leftRoi.delete(); rightRoi.delete();
                     hsv.delete(); hsvPlanes.delete(); newHsvPlanes.delete(); s.delete();
                 } else {
                     alert("⚠️ Không tìm thấy 4 góc trên một số ảnh. Hãy đảm bảo chụp trên nền tương phản.");
@@ -360,6 +378,15 @@
             }
         }
 
+        // TÍNH NĂNG XÓA ẢNH
+        window.deleteImage = function(index) {
+            // Hỏi xác nhận để tránh bấm nhầm
+            if (confirm(`Bạn có chắc chắn muốn xóa Trang ${index + 1}?`)) {
+                images.splice(index, 1); // Xóa khỏi mảng
+                renderPreview();         // Cập nhật lại giao diện
+            }
+        };
+
         function renderPreview() {
             preview.innerHTML = '';
             images.forEach((src, index) => {
@@ -367,10 +394,12 @@
                 div.className = 'img-container';
                 div.innerHTML = `
                     <span class="page-num">Trang ${index + 1}</span>
+                    <button class="btn-delete" onclick="deleteImage(${index})" title="Xóa trang này">🗑️</button>
                     <img src="${src}" alt="Trang ${index + 1}">
                 `;
                 preview.appendChild(div);
             });
+            // Ẩn cụm tính năng xuất PDF nếu mảng trống (người dùng xóa hết ảnh)
             exportSection.style.display = images.length > 0 ? 'block' : 'none';
         }
 
