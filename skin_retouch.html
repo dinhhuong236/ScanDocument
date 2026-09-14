@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Portrait Retouch - Adjustable Smoothing</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #1a73e8; }
+        .upload-section { display: flex; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 15px; }
+        .upload-btn { display: inline-block; padding: 10px 20px; background: #1a73e8; color: white; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .upload-btn:hover { background: #1557b0; }
+        input[type="file"] { display: none; }
+        
+        .control-group { display: flex; align-items: center; gap: 10px; font-weight: bold; font-size: 14px; }
+        select { padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; background: #fff; cursor: pointer; }
+
+        #status { text-align: center; font-weight: bold; color: #fbbc05; margin: 15px 0; }
+        .images { display: flex; justify-content: space-between; margin-top: 20px; flex-wrap: wrap; }
+        .img-box { width: 48%; text-align: center; }
+        img, canvas { max-width: 100%; height: auto; border-radius: 8px; border: 1px solid #ddd; background: #fafafa; }
+        .btn-group { display: flex; gap: 15px; margin-top: 20px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        #processBtn { background: #34a853; color: white; }
+        #processBtn:disabled { background: #9e9e9e; cursor: not-allowed; }
+        #downloadBtn { background: #ea4335; color: white; display: none; }
+        #downloadBtn:hover { background: #c5221f; }
+    </style>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<div class="container">
+    <h1>✨ AI Portrait Retouch (Custom Smooth)</h1>
+    <p style="text-align:center;">Bảo vệ tuyệt đối lông mày & mắt — Tùy chỉnh mức độ mịn da theo ý muốn</p>
+    
+    <div class="upload-section">
+        <label class="upload-btn">
+            Chọn ảnh chân dung (JPG/PNG)
+            <input type="file" id="fileInput" accept="image/*">
+        </label>
+
+        <div class="control-group">
+            <label for="smoothLevel">Mức độ mịn da:</label>
+            <select id="smoothLevel">
+                <option value="very_low">Rất thấp (Tự nhiên tối đa)</option>
+                <option value="low">Thấp</option>
+                <option value="medium" selected>Trung bình (Khuyên dùng)</option>
+                <option value="high">Cao</option>
+                <option value="very_high">Rất cao (Láng mịn không tì vết)</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="status">⏳ Đang khởi tạo AI & OpenCV... Vui lòng đợi trong giây lát!</div>
+
+    <div class="images">
+        <div class="img-box">
+            <h3>Ảnh Gốc</h3>
+            <img id="imageSrc" alt="Chưa có ảnh" />
+        </div>
+        <div class="img-box">
+            <h3>Ảnh Đã Xử Lý AI</h3>
+            <canvas id="canvasOutput"></canvas>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button id="processBtn" disabled>Bắt đầu AI Retouch</button>
+        <button id="downloadBtn">⬇️ Tải ảnh đã xử lý</button>
+    </div>
+</div>
+
+<script async src="opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
+
+<script>
+    let cvReady = false;
+    let faceMeshReady = false;
+    let isImageLoaded = false;
+    let originalFilename = "AI_Retouched.jpg";
+    let loadedImageObj = null;
+
+    const statusEl = document.getElementById('status');
+    const processBtn = document.getElementById('processBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const imageSrc = document.getElementById('imageSrc');
+
+    function checkAllConditions() {
+        if (cvReady && faceMeshReady) {
+            if (isImageLoaded) {
+                statusEl.style.color = '#34a853';
+                statusEl.innerText = "✅ Hệ thống sẵn sàng! Hãy chọn mức độ mịn và bấm Xử lý.";
+                processBtn.disabled = false;
+            } else {
+                statusEl.style.color = '#1a73e8';
+                statusEl.innerText = "✅ AI đã sẵn sàng! Vui lòng chọn ảnh chân dung.";
+                processBtn.disabled = true;
+            }
+        } else {
+            processBtn.disabled = true;
+        }
+    }
+
+    function onOpenCvReady() {
+        if (cv instanceof Promise) {
+            cv.then((target) => { cv = target; cvReady = true; checkAllConditions(); });
+        } else if (cv && cv.onRuntimeInitialized) {
+            cv.onRuntimeInitialized = () => { cvReady = true; checkAllConditions(); };
+        } else {
+            cvReady = true; checkAllConditions();
+        }
+    }
+
+    const faceMesh = new FaceMesh({locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+    
+    faceMesh.setOptions({
+        maxNumFaces: 1, 
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5, 
+        minTrackingConfidence: 0.5
+    });
+    
+    faceMesh.onResults(onResults);
+    
+    faceMesh.initialize().then(() => { 
+        faceMeshReady = true; 
+        checkAllConditions(); 
+    }).catch(err => {
+        statusEl.innerText = "❌ Lỗi khởi tạo MediaPipe: " + err;
+    });
+
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const ext = file.name.split('.').pop();
+            const baseName = file.name.substring(0, file.name.lastIndexOf('.'));
+            originalFilename = `${baseName}_AI_Retouch.${ext}`;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                loadedImageObj = new Image();
+                loadedImageObj.onload = () => {
+                    imageSrc.src = loadedImageObj.src;
+                    isImageLoaded = true;
+                    downloadBtn.style.display = 'none';
+                    checkAllConditions();
+                };
+                loadedImageObj.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    processBtn.addEventListener('click', async () => {
+        if (!faceMeshReady || !loadedImageObj) return;
+
+        statusEl.style.color = '#e53935';
+        statusEl.innerText = "⏳ AI đang phân tích khuôn mặt...";
+        processBtn.disabled = true;
+        downloadBtn.style.display = 'none';
+        
+        const maxAiDim = 800;
+        const w = loadedImageObj.naturalWidth;
+        const h = loadedImageObj.naturalHeight;
+        
+        if (Math.max(w, h) > maxAiDim) {
+            const scaleAi = maxAiDim / Math.max(w, h);
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = Math.round(w * scaleAi);
+            tempCanvas.height = Math.round(h * scaleAi);
+            const tCtx = tempCanvas.getContext('2d');
+            tCtx.drawImage(loadedImageObj, 0, 0, tempCanvas.width, tempCanvas.height);
+            await faceMesh.send({image: tempCanvas});
+        } else {
+            await faceMesh.send({image: loadedImageObj});
+        }
+    });
+
+    function onResults(results) {
+        if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+            statusEl.innerText = "❌ Lỗi: Không tìm thấy khuôn mặt trong ảnh!";
+            processBtn.disabled = false;
+            return;
+        }
+
+        statusEl.innerText = "⏳ Đang kết xuất ảnh theo mức độ mịn bạn chọn...";
+        
+        setTimeout(() => {
+            try {
+                // Lấy cấu hình độ mịn từ dropdown
+                const level = document.getElementById('smoothLevel').value;
+                let sigma = 60;
+                let textureWeight = 1.3;
+
+                switch(level) {
+                    case 'very_low':  sigma = 40;  textureWeight = 1.4; break;
+                    case 'low':       sigma = 60;  textureWeight = 1.3; break;
+                    case 'medium':    sigma = 80;  textureWeight = 1.2; break;
+                    case 'high':      sigma = 110; textureWeight = 1.0; break;
+                    case 'very_high': sigma = 150; textureWeight = 0.8; break;
+                }
+
+                const landmarks = results.multiFaceLandmarks[0];
+                const width = loadedImageObj.naturalWidth;
+                const height = loadedImageObj.naturalHeight;
+
+                // 1. Tạo mặt nạ bảo vệ vùng mắt, lông mày, môi
+                const maskCanvas = document.createElement('canvas');
+                maskCanvas.width = width; maskCanvas.height = height;
+                const ctx = maskCanvas.getContext('2d');
+                
+                ctx.fillStyle = 'black'; 
+                ctx.fillRect(0, 0, width, height);
+
+                ctx.fillStyle = 'white'; 
+                ctx.beginPath();
+                const faceOval = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
+                ctx.moveTo(landmarks[faceOval[0]].x * width, landmarks[faceOval[0]].y * height);
+                for(let i = 1; i < faceOval.length; i++) {
+                    ctx.lineTo(landmarks[faceOval[i]].x * width, landmarks[faceOval[i]].y * height);
+                }
+                ctx.closePath(); 
+                ctx.fill();
+
+                ctx.fillStyle = 'black';
+                const leftEye = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398, 276, 283, 282, 295, 285, 417];
+                const rightEye = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246, 46, 53, 52, 65, 55, 193];
+                const lips = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 2, 94];
+                
+                function drawHole(pts) {
+                    ctx.beginPath();
+                    ctx.moveTo(landmarks[pts[0]].x * width, landmarks[pts[0]].y * height);
+                    for(let i = 1; i < pts.length; i++) {
+                        ctx.lineTo(landmarks[pts[i]].x * width, landmarks[pts[i]].y * height);
+                    }
+                    ctx.closePath(); 
+                    ctx.fill();
+                }
+                drawHole(leftEye); 
+                drawHole(rightEye); 
+                drawHole(lips);
+
+                // 2. Xử lý OpenCV
+                let src = cv.imread(loadedImageObj);
+                cv.cvtColor(src, src, cv.COLOR_RGBA2RGB); 
+                
+                let mask = cv.imread(maskCanvas);
+                cv.cvtColor(mask, mask, cv.COLOR_RGBA2GRAY);
+                let maskBlur = new cv.Mat();
+                cv.GaussianBlur(mask, maskBlur, new cv.Size(25, 25), 0);
+
+                let textureBlur = new cv.Mat();
+                cv.GaussianBlur(src, textureBlur, new cv.Size(0, 0), 1.5, 1.5);
+
+                // Áp dụng độ mịn tương ứng với Sigma đã chọn
+                let smoothed = new cv.Mat();
+                let maxBilaDim = 1500;
+                if (width > maxBilaDim || height > maxBilaDim) {
+                    let scaleBila = maxBilaDim / Math.max(width, height);
+                    let smallSrc = new cv.Mat();
+                    cv.resize(src, smallSrc, new cv.Size(Math.round(width * scaleBila), Math.round(height * scaleBila)));
+                    let smallSmooth = new cv.Mat();
+                    cv.bilateralFilter(smallSrc, smallSmooth, 15, sigma, sigma);
+                    cv.resize(smallSmooth, smoothed, new cv.Size(width, height));
+                    smallSrc.delete(); 
+                    smallSmooth.delete();
+                } else {
+                    cv.bilateralFilter(src, smoothed, 15, sigma, sigma);
+                }
+
+                let result = new cv.Mat(src.rows, src.cols, src.type());
+                let srcData = src.data;
+                let texData = textureBlur.data;
+                let smData = smoothed.data;
+                let mskData = maskBlur.data;
+                let resData = result.data;
+
+                for (let i = 0, j = 0; i < srcData.length; i += 3, j++) {
+                    let maskVal = mskData[j] / 255.0;
+
+                    if (maskVal > 0) {
+                        for (let c = 0; c < 3; c++) {
+                            let orig = srcData[i + c];
+                            let blur = texData[i + c];
+                            let sm = smData[i + c];
+
+                            let high_pass = orig - blur;
+                            let final_px = sm + (high_pass * textureWeight); 
+
+                            if (final_px > 255) final_px = 255;
+                            else if (final_px < 0) final_px = 0;
+
+                            resData[i + c] = final_px * maskVal + orig * (1 - maskVal);
+                        }
+                    } else {
+                        resData[i] = srcData[i];
+                        resData[i+1] = srcData[i+1];
+                        resData[i+2] = srcData[i+2];
+                    }
+                }
+
+                const canvasOutput = document.getElementById('canvasOutput');
+                canvasOutput.width = width;
+                canvasOutput.height = height;
+
+                cv.imshow('canvasOutput', result);
+
+                src.delete(); 
+                mask.delete(); 
+                maskBlur.delete(); 
+                textureBlur.delete();
+                smoothed.delete(); 
+                result.delete();
+
+                statusEl.style.color = '#34a853';
+                statusEl.innerText = `✨ Hoàn thành mức độ "${document.getElementById('smoothLevel').selectedOptions[0].text}"!`;
+                processBtn.disabled = false;
+                downloadBtn.style.display = 'block';
+
+            } catch (err) {
+                statusEl.innerText = "❌ Lỗi xử lý: " + err;
+                processBtn.disabled = false;
+            }
+        }, 50); 
+    }
+
+    downloadBtn.addEventListener('click', () => {
+        const canvas = document.getElementById('canvasOutput');
+        let mimeType = originalFilename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+        canvas.toBlob((blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = originalFilename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, mimeType, 0.92);
+    });
+</script>
+
+</body>
+</html>
