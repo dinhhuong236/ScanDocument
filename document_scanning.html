@@ -102,6 +102,15 @@
             </label>
             <input type="range" id="edgeSlider" min="0.1" max="5.0" value="2.0" step="0.1" oninput="document.getElementById('edgeVal').innerText = this.value + '%'">
         </div>
+        <div class="slider-group" style="margin-top: 15px;">
+            <label>
+                Thứ tự tải ảnh lên
+            </label>
+            <select id="sortSelect" class="quality-select">
+                <option value="date" selected>Theo ngày chụp (Cũ lên trước)</option>
+                <option value="default">Theo thứ tự chọn ảnh (Mặc định)</option>
+            </select>
+        </div>
     </div>
 
     <input type="file" id="cameraInput" accept="image/*" multiple style="display: none;" disabled>
@@ -141,25 +150,32 @@
         cameraInput.addEventListener('change', async function(e) {
             const files = e.target.files;
             if (!files || files.length === 0) return;
-        
-            // CHỈNH SỬA Ở ĐÂY: Chuyển FileList thành mảng và sắp xếp theo ngày/giờ chụp ảnh
-            // Những ảnh chụp trước (cũ hơn) sẽ được xếp lên đầu.
-            const sortedFiles = Array.from(files).sort((a, b) => {
-                // Ưu tiên sắp xếp theo thời gian tạo/sửa đổi. Nếu trùng thời gian thì xếp theo tên.
-                return a.lastModified - b.lastModified || a.name.localeCompare(b.name);
-            });
-        
+
+            // Chuyển danh sách file thành mảng
+            let processedFiles = Array.from(files);
+            
+            // Đọc tuỳ chọn sắp xếp từ giao diện
+            const sortMethod = document.getElementById('sortSelect').value;
+            
+            if (sortMethod === 'date') {
+                // Sắp xếp theo ngày tạo (cũ tới mới)
+                processedFiles.sort((a, b) => {
+                    return a.lastModified - b.lastModified || a.name.localeCompare(b.name);
+                });
+            }
+            // Nếu chọn 'default', giữ nguyên processedFiles theo thứ tự lúc chọn
+
             loadingDiv.style.display = 'block';
             loadingDiv.style.color = '#007aff';
-            loadingDiv.innerText = `⏳ Đang xử lý ${sortedFiles.length} ảnh... Vui lòng đợi!`;
+            loadingDiv.innerText = `⏳ Đang xử lý ${processedFiles.length} ảnh... Vui lòng đợi!`;
             scanBtn.disabled = true;
             exportSection.style.display = 'none';
-        
-            // Thay files.length và files[i] thành sortedFiles
-            for (let i = 0; i < sortedFiles.length; i++) {
-                await processFile(sortedFiles[i]);
+
+            // Dùng mảng đã được xử lý thứ tự
+            for (let i = 0; i < processedFiles.length; i++) {
+                await processFile(processedFiles[i]);
             }
-        
+
             loadingDiv.style.display = 'none';
             scanBtn.disabled = false;
             cameraInput.value = '';
