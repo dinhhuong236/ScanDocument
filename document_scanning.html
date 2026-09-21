@@ -141,22 +141,29 @@
         cameraInput.addEventListener('change', async function(e) {
             const files = e.target.files;
             if (!files || files.length === 0) return;
-
+        
+            // CHỈNH SỬA Ở ĐÂY: Chuyển FileList thành mảng và sắp xếp theo ngày/giờ chụp ảnh
+            // Những ảnh chụp trước (cũ hơn) sẽ được xếp lên đầu.
+            const sortedFiles = Array.from(files).sort((a, b) => {
+                // Ưu tiên sắp xếp theo thời gian tạo/sửa đổi. Nếu trùng thời gian thì xếp theo tên.
+                return a.lastModified - b.lastModified || a.name.localeCompare(b.name);
+            });
+        
             loadingDiv.style.display = 'block';
             loadingDiv.style.color = '#007aff';
-            loadingDiv.innerText = `⏳ Đang xử lý ${files.length} ảnh... Vui lòng đợi!`;
+            loadingDiv.innerText = `⏳ Đang xử lý ${sortedFiles.length} ảnh... Vui lòng đợi!`;
             scanBtn.disabled = true;
             exportSection.style.display = 'none';
-
-            for (let i = 0; i < files.length; i++) {
-                await processFile(files[i]);
+        
+            // Thay files.length và files[i] thành sortedFiles
+            for (let i = 0; i < sortedFiles.length; i++) {
+                await processFile(sortedFiles[i]);
             }
-
+        
             loadingDiv.style.display = 'none';
             scanBtn.disabled = false;
             cameraInput.value = '';
         });
-
         function processFile(file) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
